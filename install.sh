@@ -60,7 +60,7 @@ fi
 
 # -- Emergency disable script ---------------------------------------------------
 EMERGENCY_SCRIPT="/usr/local/sbin/serial-server-emergency-disable"
-info "Installing emergency disable script to $EMERGENCY_SCRIPT…"
+info "Installing emergency disable script to ${EMERGENCY_SCRIPT}..."
 cp "$SCRIPT_DIR/serial_server/emergency-disable.sh" "$EMERGENCY_SCRIPT"
 chmod 700 "$EMERGENCY_SCRIPT"
 info "Emergency disable script installed."

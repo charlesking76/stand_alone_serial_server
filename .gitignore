@@ -1,0 +1,27 @@
+# Secrets and credentials
+serial_server/tls/
+serial_server/ssh/
+serial_server/session.key
+serial_server/users.db
+
+# Configuration files
+serial_server/nginx/serial-server.conf
+serial_server/ser2net-*.yaml
+serial_server/serial-server.service
+serial_server/labels.json
+
+# Archives
+*.tar.gz
+*.tar
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Editors
+.vscode/
+*.swp

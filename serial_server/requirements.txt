@@ -1,0 +1,7 @@
+aiohttp>=3.9
+aiohttp-session>=2.12
+aiosqlite>=0.20
+bcrypt>=4.0
+cryptography>=42.0
+asyncssh>=2.14
+pyudev>=0.24

@@ -1,0 +1,2200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Serial Server</title>
+  <link rel="stylesheet" href="/static/xterm-5.3.0.css" />
+  <script src="/static/xterm-5.3.0.js"></script>
+  <script src="/static/xterm-addon-fit-0.8.0.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: flex;
+      height: 100vh;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 200px;
+      min-width: 200px;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #sidebar-header {
+      padding: 16px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7b8cde;
+      border-bottom: 1px solid #0f3460;
+      user-select: none;
+    }
+
+    #port-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .port-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+
+    .port-item:hover { background: #1a2a50; }
+
+    .port-item.active {
+      background: #1a2a50;
+      border-left-color: #4a90e2;
+    }
+
+    .port-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #444;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+
+    .port-dot.connected   { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+    .port-dot.connecting  { background: #ff9800; box-shadow: 0 0 6px #ff9800; }
+    .port-dot.error       { background: #f44336; box-shadow: 0 0 6px #f44336; }
+
+    .port-item-handle {
+      color: #334;
+      cursor: grab;
+      font-size: 13px;
+      flex-shrink: 0;
+      user-select: none;
+      padding-right: 2px;
+    }
+    .port-item.drag-over { border-top: 2px solid #4a90e2; }
+    .port-item.dragging  { opacity: 0.4; }
+
+    .port-label {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .port-label-name {
+      font-size: 13px;
+      color: #cdd3e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .port-label-dev {
+      font-size: 11px;
+      color: #556;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .port-label-input {
+      width: 100%;
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #4a90e2;
+      border-radius: 3px;
+      padding: 2px 5px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    /* ── Main area ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      min-height: 48px;
+    }
+
+    #toolbar-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e0e0e0;
+      flex: 1;
+    }
+
+    #toolbar-status {
+      font-size: 12px;
+      color: #7b8cde;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+    }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-connect {
+      background: #4a90e2;
+      color: #fff;
+    }
+    .btn-connect:not(:disabled):hover { background: #5a9ff0; }
+
+    .btn-disconnect {
+      background: #e25454;
+      color: #fff;
+    }
+    .btn-disconnect:not(:disabled):hover { background: #f06565; }
+
+    .btn-clear {
+      background: #2e3a5c;
+      color: #aab;
+    }
+    .btn-clear:not(:disabled):hover { background: #3a4a70; }
+
+    .btn-break {
+      background: #7a3a00;
+      color: #ffb870;
+    }
+    .btn-break:not(:disabled):hover { background: #9a4e00; }
+
+    .btn-logout {
+      background: #3a1a1a;
+      color: #e25454;
+      text-decoration: none;
+    }
+    .btn-logout:hover { background: #4a2020; }
+
+    #baud-select {
+      background: #2e3a5c;
+      color: #cdd3e0;
+      border: 1px solid #3a4a70;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    #baud-select:disabled { opacity: 0.4; cursor: not-allowed; }
+    #baud-select:not(:disabled):hover { border-color: #4a90e2; }
+
+    #baud-label {
+      font-size: 12px;
+      color: #7b8cde;
+      white-space: nowrap;
+    }
+
+    /* ── Terminal pane ── */
+    #terminal-container {
+      flex: 1;
+      min-height: 0;
+      padding: 8px;
+      overflow: hidden;
+      background: #0d1117;
+    }
+
+    #terminal-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #3a4a6a;
+      font-size: 15px;
+      letter-spacing: 0.05em;
+    }
+
+    .xterm { height: 100%; }
+    .xterm-viewport { overflow-y: scroll !important; }
+
+    /* ── Sidebar footer / settings button ── */
+    #sidebar-footer {
+      border-top: 1px solid #0f3460;
+      padding: 8px 0;
+    }
+
+    #settings-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      color: #7b8cde;
+      font-size: 13px;
+      user-select: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #settings-btn:hover { background: #1a2a50; }
+    #settings-btn.active { background: #1a2a50; border-left-color: #4a90e2; color: #e0e0e0; }
+
+    /* ── Settings panel ── */
+    #settings-panel {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 32px;
+      background: #0d1117;
+      color: #e0e0e0;
+    }
+
+    #settings-panel h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #7b8cde;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+    }
+
+    #settings-panel h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7b8cde;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    .settings-section {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 24px;
+      max-width: 860px;
+    }
+
+    .user-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #0f1a30;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .user-row span { flex: 1; }
+
+    .btn-danger {
+      background: #5c1f1f;
+      color: #f06565;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-danger:hover { background: #7a2929; }
+
+    .add-user-form { display: flex; flex-direction: column; gap: 10px; }
+
+    .form-row { display: flex; gap: 10px; }
+
+    .form-input {
+      flex: 1;
+      background: #0f1a30;
+      color: #e0e0e0;
+      border: 1px solid #2e3a5c;
+      border-radius: 4px;
+      padding: 7px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus { border-color: #4a90e2; }
+    .form-input::placeholder { color: #445; }
+
+    .settings-msg {
+      font-size: 12px;
+      padding: 6px 0;
+      min-height: 22px;
+    }
+    .settings-msg.ok  { color: #4caf50; }
+    .settings-msg.err { color: #f44336; }
+
+    /* ── Timeout warning modal ── */
+    #timeout-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    #timeout-modal.show { display: flex; }
+
+    .timeout-box {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 32px 36px;
+      width: 340px;
+      text-align: center;
+    }
+
+    .timeout-box h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e0e0e0;
+      margin-bottom: 10px;
+    }
+
+    .timeout-box p {
+      font-size: 13px;
+      color: #7b8cde;
+      margin-bottom: 6px;
+    }
+
+    #timeout-countdown {
+      font-size: 36px;
+      font-weight: 700;
+      color: #e25454;
+      margin: 12px 0 24px;
+    }
+
+    .timeout-actions { display: flex; gap: 12px; justify-content: center; }
+
+    /* ── Login log ── */
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .log-table th {
+      text-align: left;
+      padding: 6px 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #445;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .log-table td {
+      padding: 7px 10px;
+      color: #cdd3e0;
+      border-bottom: 1px solid #0d1a2e;
+    }
+
+    .log-table tr:last-child td { border-bottom: none; }
+
+    .log-table td.log-user  { color: #7b8cde; font-weight: 500; }
+    .log-table td.log-ip    { color: #556; font-family: monospace; }
+    .log-table td.log-time  { color: #556; white-space: nowrap; }
+
+    .log-empty {
+      padding: 12px 10px;
+      color: #445;
+      font-size: 12px;
+    }
+
+    /* ── Log pagination ── */
+    .log-pagination {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #556;
+    }
+    .log-pagination .pg-info { flex: 1; }
+    .btn-pg {
+      padding: 4px 10px;
+      background: #2e3a5c;
+      color: #cdd3e0;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-pg:hover:not(:disabled) { background: #3a4a70; }
+    .btn-pg:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── TLS section ── */
+    .tls-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .tls-status.http  { background: #1a1a10; border: 1px solid #4a4010; color: #a08020; }
+    .tls-status.https { background: #0d2010; border: 1px solid #1a5020; color: #4caf50; }
+
+    .tls-status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .tls-status.http  .tls-status-dot { background: #a08020; }
+    .tls-status.https .tls-status-dot { background: #4caf50; box-shadow: 0 0 5px #4caf50; }
+
+    .tls-cert-detail {
+      font-size: 11px;
+      color: #556;
+      margin-bottom: 16px;
+      line-height: 1.7;
+    }
+    .tls-cert-detail span { color: #7b8cde; }
+
+    .file-upload-row {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .file-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .file-field label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7b8cde;
+      width: 36px;
+      flex-shrink: 0;
+    }
+
+    .file-field input[type="file"] {
+      flex: 1;
+      background: #0f1a30;
+      color: #cdd3e0;
+      border: 1px solid #2e3a5c;
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .file-field input[type="file"]::-webkit-file-upload-button {
+      background: #2e3a5c;
+      color: #aab;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+
+    /* ── Tab switcher ── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      margin-bottom: 14px;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #2e3a5c;
+      width: fit-content;
+    }
+    .tab-btn {
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      border: none;
+      background: #0f1a30;
+      color: #556;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-btn.active { background: #2e3a5c; color: #cdd3e0; }
+    .tab-btn:hover:not(.active) { background: #1a2a50; color: #aab; }
+
+    .btn-danger-sm {
+      background: #5c1f1f;
+      color: #f06565;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-danger-sm:hover { background: #7a2929; }
+
+    /* ── USB device mapping ── */
+    .udev-empty {
+      padding: 10px 0;
+      color: #445;
+      font-size: 12px;
+    }
+    .badge-connected    { color: #4caf50; font-weight: 600; }
+    .badge-disconnected { color: #556; }
+    .badge-unregistered { color: #ff9800; font-weight: 600; }
+    .badge-noserial     { color: #f44336; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<nav id="sidebar">
+  <div id="sidebar-header">Serial Ports</div>
+  <div id="port-list"><p style="padding:12px 16px;color:#555;font-size:12px">Loading…</p></div>
+  <div id="sidebar-footer">
+    <div id="version-label" style="padding:4px 16px 2px;font-size:10px;color:#3a4a6b;text-align:right;user-select:none">v—</div>
+    <div id="settings-btn" onclick="toggleSettings()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </div>
+  </div>
+</nav>
+
+<div id="main">
+  <div id="toolbar">
+    <span id="toolbar-title">No port selected</span>
+    <span id="toolbar-status"></span>
+    <span id="baud-label">Baud rate</span>
+    <select id="baud-select" disabled></select>
+    <button class="btn btn-connect"    id="btn-connect"    disabled>Connect</button>
+    <button class="btn btn-disconnect" id="btn-disconnect" disabled>Disconnect</button>
+    <button class="btn btn-break"      id="btn-break"      disabled>Send Break</button>
+    <button class="btn btn-clear"      id="btn-clear"      disabled>Clear</button>
+    <a href="/logout" class="btn btn-logout">Logout</a>
+  </div>
+  <div id="terminal-container">
+    <div id="terminal-placeholder">← Select a port to begin</div>
+  </div>
+
+  <div id="settings-panel">
+    <h2>Settings</h2>
+
+    <div class="settings-section">
+      <h3>System Information</h3>
+      <div id="sysinfo-grid" style="display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:12px">
+        <span style="color:#556">Loading…</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>User Accounts</h3>
+      <div id="user-list" class="user-list"></div>
+
+      <h3>Add / Update User</h3>
+      <div class="add-user-form">
+        <div class="form-row">
+          <input class="form-input" id="new-username" type="text"     placeholder="Username"         autocomplete="off" />
+          <input class="form-input" id="new-password" type="password" placeholder="Password"         autocomplete="new-password" />
+          <input class="form-input" id="new-password2" type="password" placeholder="Confirm password" autocomplete="new-password" />
+        </div>
+        <div>
+          <button class="btn btn-connect" onclick="addUser()">Add / Update</button>
+        </div>
+        <div id="user-msg" class="settings-msg"></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Session</h3>
+      <div class="add-user-form">
+        <div class="form-row" style="align-items:center">
+          <input class="form-input" type="number" id="timeout-minutes" min="0" max="1440"
+                 placeholder="Minutes (0 = disabled)" style="max-width:220px" />
+          <button class="btn btn-connect" onclick="saveTimeout()">Save</button>
+        </div>
+        <div style="font-size:11px;color:#445;margin-top:4px">
+          Auto-logout after this many minutes of inactivity. Set to 0 to disable.
+        </div>
+        <div id="timeout-save-msg" class="settings-msg"></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>SSH Serial Access</h3>
+      <div class="tls-cert-detail" style="margin-bottom:16px">
+        Allow terminal programs (e.g. ZOC) to connect via SSH and access a serial port
+        directly — enabling XMODEM, ZMODEM, and other protocols natively.
+      </div>
+
+      <div class="add-user-form">
+        <div class="form-row" style="align-items:center;flex-wrap:wrap;gap:10px">
+          <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;white-space:nowrap">
+            <input type="checkbox" id="ssh-enabled" style="margin-right:6px;accent-color:#4a90e2" />
+            Enable SSH Server
+          </label>
+        </div>
+
+        <div class="form-row" style="flex-wrap:wrap">
+          <div class="field" style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:120px">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde">SSH Port</label>
+            <input class="form-input" type="number" id="ssh-port" value="2222" min="1024" max="65535" />
+          </div>
+          <div class="field" style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:160px">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde">Serial Port</label>
+            <select class="form-input" id="ssh-serial-port"></select>
+          </div>
+        </div>
+
+        <div>
+          <button class="btn btn-connect" onclick="saveSshSettings()">Save</button>
+        </div>
+        <div id="ssh-msg" class="settings-msg"></div>
+
+        <div id="ssh-info" class="tls-cert-detail" style="display:none;margin-top:8px">
+          <span>Host:</span> <span id="ssh-info-host"></span><br>
+          <span>Port:</span> <span id="ssh-info-port"></span><br>
+          <span>Auth:</span> existing username &amp; password<br>
+          <span>Fingerprint:</span> <span id="ssh-info-fp" style="font-family:monospace;font-size:11px"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Login History</h3>
+      <div id="log-wrap" style="overflow-x:auto">
+        <table class="log-table">
+          <thead>
+            <tr><th>User</th><th>IP Address</th><th>Time (UTC)</th><th>Result</th></tr>
+          </thead>
+          <tbody id="log-body">
+            <tr><td colspan="4" class="log-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="log-pagination">
+        <span class="pg-info" id="log-pg-info"></span>
+        <button class="btn-pg" id="log-pg-prev" onclick="logPageDelta(-1)" disabled>&#8592; Prev</button>
+        <button class="btn-pg" id="log-pg-next" onclick="logPageDelta(1)"  disabled>Next &#8594;</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>HTTPS / TLS</h3>
+
+      <div id="tls-status-bar" class="tls-status http">
+        <span class="tls-status-dot"></span>
+        <span id="tls-status-text">Loading…</span>
+      </div>
+
+      <div id="tls-cert-detail" class="tls-cert-detail" style="display:none"></div>
+
+      <h3 id="tls-upload-heading">Install Certificate</h3>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tab-pem"  onclick="switchTlsTab('pem')">PEM Files</button>
+        <button class="tab-btn"        id="tab-p12"  onclick="switchTlsTab('p12')">PKCS#12</button>
+      </div>
+
+      <!-- PEM upload -->
+      <div id="tls-pem-form">
+        <div class="file-upload-row">
+          <div class="file-field">
+            <label>Cert</label>
+            <input type="file" id="tls-cert-file" accept=".crt,.pem,.cer" />
+          </div>
+          <div class="file-field">
+            <label>Key</label>
+            <input type="file" id="tls-key-file" accept=".key,.pem" />
+          </div>
+        </div>
+      </div>
+
+      <!-- PKCS#12 upload -->
+      <div id="tls-p12-form" style="display:none">
+        <div class="file-upload-row">
+          <div class="file-field">
+            <label>File</label>
+            <input type="file" id="tls-p12-file" accept=".p12,.pfx" />
+          </div>
+          <div class="file-field">
+            <label>Pass</label>
+            <input class="form-input" type="password" id="tls-p12-password"
+                   placeholder="PKCS#12 password (leave blank if none)"
+                   autocomplete="new-password" style="font-size:12px;padding:6px 8px" />
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-connect" onclick="uploadTls()">Apply Certificate</button>
+        <button class="btn-danger-sm" id="tls-remove-btn" style="display:none" onclick="removeTls()">Remove TLS</button>
+      </div>
+      <div id="tls-msg" class="settings-msg"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>USB Device Mapping</h3>
+      <div class="tls-cert-detail" style="margin-bottom:16px">
+        Assign a stable <code style="font-family:monospace;color:#7b8cde">/dev/ttyUSBPort<em>N</em></code>
+        symlink to each USB serial adapter based on its hardware serial number, so port
+        assignments survive reboots and re-plugging.
+      </div>
+
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;flex-wrap:wrap">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;white-space:nowrap;cursor:pointer">
+          <input type="checkbox" id="udev-auto-register"
+                 style="margin-right:6px;accent-color:#4a90e2" />
+          Auto-register new devices
+        </label>
+        <button class="btn btn-clear" style="margin-left:auto;padding:4px 12px;font-size:12px"
+                onclick="loadUdev()">Refresh</button>
+      </div>
+      <div style="font-size:11px;color:#445;margin-bottom:16px">
+        When enabled, newly inserted USB serial adapters with a unique serial number are
+        automatically assigned the next available port number.
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;margin-bottom:8px">Identification Method</div>
+        <div style="font-size:11px;color:#445;margin-bottom:8px">
+          How to identify adapters when assigning and auto-registering ports.<br>
+          <b style="color:#cdd3e0">USB Port Path</b> for physical machines (stable across reboots).<br>
+          <b style="color:#cdd3e0">Serial Number</b> for VMs or adapters that move between USB ports.<br>
+        </div>
+        <div style="display:flex;gap:20px">
+          <label style="font-size:12px;color:#cdd3e0;cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="udev-id-method" value="usb_path" style="accent-color:#4a90e2" />
+            USB Port Path
+          </label>
+          <label style="font-size:12px;color:#cdd3e0;cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="udev-id-method" value="serial" style="accent-color:#4a90e2" />
+            Serial Number
+          </label>
+        </div>
+      </div>
+
+      <div id="udev-table-wrap" style="overflow-x:auto;margin-bottom:12px">
+        <span style="color:#556;font-size:12px">Loading…</span>
+      </div>
+
+      <div id="udev-msg" class="settings-msg"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Access Control</h3>
+      <div class="tls-cert-detail" style="margin-bottom:16px">
+        Restrict access to this interface. Changes take effect immediately on the nginx
+        reverse proxy — ensure you have a client certificate installed before enabling mTLS,
+        or configure a break-glass IP that bypasses the requirement.
+      </div>
+
+      <!-- IP Whitelist -->
+      <div style="margin-bottom:18px">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="sec-ip-enabled" style="accent-color:#4a90e2" onchange="secIpToggle()" />
+          Enable IP Whitelist
+        </label>
+        <div style="font-size:11px;color:#445;margin-bottom:8px">
+          Only these IPs / CIDRs can reach port 443. One entry per line (e.g. <code style="font-family:monospace;color:#7b8cde">203.0.113.0/24</code>).
+        </div>
+        <textarea id="sec-ip-list" rows="4"
+          style="width:100%;box-sizing:border-box;background:#0d1b2a;color:#c8d8e8;border:1px solid #1e3a5f;border-radius:4px;padding:8px;font-family:monospace;font-size:12px;resize:vertical"
+          placeholder="192.168.1.0/24&#10;203.0.113.10"></textarea>
+      </div>
+
+      <!-- mTLS -->
+      <div style="margin-bottom:18px">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="sec-mtls-enabled" style="accent-color:#4a90e2" onchange="secMtlsToggle()" />
+          Require Client Certificate (mTLS)
+        </label>
+        <div id="sec-mtls-warning" style="display:none;background:#3a1a00;border:1px solid #e67e22;border-radius:4px;padding:8px 12px;font-size:11px;color:#e67e22;margin-bottom:8px">
+          Warning: Enabling mTLS will block all browsers without a valid client certificate.
+          Download and install a client certificate below before saving, or configure a break-glass IP.
+        </div>
+      </div>
+
+      <!-- Break-glass IPs -->
+      <div style="margin-bottom:18px">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;display:block;margin-bottom:4px">
+          Break-Glass IPs (exempt from mTLS)
+        </label>
+        <div style="font-size:11px;color:#445;margin-bottom:8px">
+          Requests from these IPs bypass the client certificate check but still require a username and password.
+          One IP per line.
+        </div>
+        <textarea id="sec-break-glass" rows="3"
+          style="width:100%;box-sizing:border-box;background:#0d1b2a;color:#c8d8e8;border:1px solid #1e3a5f;border-radius:4px;padding:8px;font-family:monospace;font-size:12px;resize:vertical"
+          placeholder="10.0.0.1&#10;192.168.1.50"></textarea>
+      </div>
+
+      <button class="btn btn-connect" onclick="saveSecuritySettings()">Save Settings</button>
+      <div id="sec-settings-msg" class="settings-msg"></div>
+
+      <!-- CA certificate -->
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #1e3a5f">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;margin-bottom:8px">CA Certificate</div>
+        <div style="font-size:11px;color:#445;margin-bottom:6px">
+          Download and install this into your browser or OS trust store so it trusts client certificates issued here.
+        </div>
+        <div style="font-size:11px;color:#556;margin-bottom:10px">
+          System ID: <span id="sec-system-id" style="font-family:monospace;color:#7b8cde;letter-spacing:0.1em">—</span>
+          &nbsp;·&nbsp; CA name: <span id="sec-ca-name" style="font-family:monospace;color:#7b8cde">—</span>
+        </div>
+        <button class="btn btn-clear" style="font-size:12px;padding:5px 14px" onclick="downloadCa()">Download CA Certificate</button>
+      </div>
+
+      <!-- Client certificates -->
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #1e3a5f">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7b8cde;margin-bottom:8px">Client Certificates</div>
+        <div style="font-size:11px;color:#445;margin-bottom:12px">
+          Generate a certificate for each user or device. Download the .p12 file and import it into the browser.
+        </div>
+
+        <div id="sec-cert-table-wrap" style="margin-bottom:12px">
+          <span style="font-size:12px;color:#556">Loading…</span>
+        </div>
+
+        <div class="form-row" style="align-items:center;gap:10px;flex-wrap:wrap">
+          <input class="form-input" type="text" id="sec-cert-name" placeholder="Certificate name (e.g. Alice)" style="max-width:240px" />
+          <button class="btn btn-connect" onclick="generateCert()">Generate &amp; Download</button>
+        </div>
+        <div id="sec-cert-msg" class="settings-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="timeout-modal">
+  <div class="timeout-box">
+    <h3>Session Expiring</h3>
+    <p>You will be logged out due to inactivity in</p>
+    <div id="timeout-countdown">60</div>
+    <p>seconds.</p>
+    <div class="timeout-actions">
+      <button class="btn btn-connect" onclick="keepAlive()">Stay Logged In</button>
+      <a href="/logout" class="btn btn-logout">Logout Now</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  const state = {
+    ports: [],           // list of port names from server
+    config: {},          // portName -> { baud, tcp_port }
+    baudRates: [],       // valid baud rates from server
+    labels: {},          // portName -> label string
+    selected: null,      // currently viewed port name
+    sessions: {},        // portName -> { ws, term, fitAddon, status }
+  };
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const portListEl    = document.getElementById('port-list');
+  const toolbarTitle  = document.getElementById('toolbar-title');
+  const toolbarStatus = document.getElementById('toolbar-status');
+  const baudSelect    = document.getElementById('baud-select');
+  const btnConnect    = document.getElementById('btn-connect');
+  const btnDisconnect = document.getElementById('btn-disconnect');
+  const btnBreak      = document.getElementById('btn-break');
+  const btnClear      = document.getElementById('btn-clear');
+  const termContainer = document.getElementById('terminal-container');
+  const placeholder   = document.getElementById('terminal-placeholder');
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const wsBase = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+
+  function setDot(portName, cls) {
+    const el = document.querySelector(`.port-item[data-port="${portName}"] .port-dot`);
+    if (el) { el.className = 'port-dot ' + cls; }
+  }
+
+  function updateToolbar() {
+    const port = state.selected;
+    if (!port) {
+      toolbarTitle.textContent = 'No port selected';
+      toolbarStatus.textContent = '';
+      baudSelect.disabled    = true;
+      btnConnect.disabled    = true;
+      btnDisconnect.disabled = true;
+      btnBreak.disabled      = true;
+      btnClear.disabled      = true;
+      return;
+    }
+    const s = state.sessions[port];
+    const status = s ? s.status : 'disconnected';
+    toolbarTitle.textContent = state.labels[port] || `/dev/${port}`;
+    toolbarStatus.textContent = status;
+
+    // Sync baud dropdown to this port's current config
+    const cfg = state.config[port];
+    if (cfg) baudSelect.value = cfg.baud;
+    baudSelect.disabled    = false;
+
+    btnConnect.disabled    = (status === 'connected' || status === 'connecting');
+    btnDisconnect.disabled = (status !== 'connected' && status !== 'connecting');
+    btnBreak.disabled      = (status !== 'connected');
+    btnClear.disabled      = false;
+  }
+
+  // ── Terminal creation ──────────────────────────────────────────────────────
+  function createTerminalEl(portName) {
+    const div = document.createElement('div');
+    div.id = `term-${portName}`;
+    div.style.cssText = 'width:100%;height:100%;display:none;';
+    termContainer.appendChild(div);
+    return div;
+  }
+
+  function getOrCreateSession(portName) {
+    if (state.sessions[portName]) return state.sessions[portName];
+
+    const termEl = createTerminalEl(portName);
+    const term = new Terminal({
+      theme: {
+        background: '#0d1117',
+        foreground: '#c9d1d9',
+        cursor:     '#58a6ff',
+        selectionBackground: '#264f78',
+        black:   '#484f58', red:     '#ff7b72', green:   '#3fb950', yellow:  '#d29922',
+        blue:    '#58a6ff', magenta: '#bc8cff', cyan:    '#39c5cf', white:   '#b1bac4',
+        brightBlack:   '#6e7681', brightRed:     '#ffa198', brightGreen:   '#56d364',
+        brightYellow:  '#e3b341', brightBlue:    '#79c0ff', brightMagenta: '#d2a8ff',
+        brightCyan:    '#56d4dd', brightWhite:   '#f0f6fc',
+      },
+      fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace',
+      fontSize: 13,
+      lineHeight: 1.3,
+      scrollback: 250000,
+      cursorBlink: true,
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    // term.open() is deferred until the element is visible — opening in a
+    // display:none container produces a zero-size canvas that can overflow
+    // and block toolbar clicks.
+
+    const session = { ws: null, term, fitAddon, termEl, status: 'disconnected', opened: false };
+    state.sessions[portName] = session;
+    return session;
+  }
+
+  // ── Port selection ─────────────────────────────────────────────────────────
+  function selectPort(portName) {
+    // Hide all terminals
+    document.querySelectorAll('[id^="term-"]').forEach(el => el.style.display = 'none');
+    placeholder.style.display = 'none';
+
+    // Highlight sidebar item
+    document.querySelectorAll('.port-item').forEach(el => el.classList.remove('active'));
+    const item = document.querySelector(`.port-item[data-port="${portName}"]`);
+    if (item) item.classList.add('active');
+
+    state.selected = portName;
+
+    // Show the terminal element first, then open xterm into it so it can
+    // measure the container correctly and size its canvas from the start.
+    const session = getOrCreateSession(portName);
+    session.termEl.style.display = 'block';
+    if (!session.opened) {
+      session.term.open(session.termEl);
+      session.opened = true;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => session.fitAddon.fit()));
+
+    updateToolbar();
+  }
+
+  // ── Connect / Disconnect ───────────────────────────────────────────────────
+  function connect(portName) {
+    const session = getOrCreateSession(portName);
+    if (session.ws && session.ws.readyState < 2) return; // already open/connecting
+
+    session.status = 'connecting';
+    setDot(portName, 'connecting');
+    updateToolbar();
+
+    const ws = new WebSocket(`${wsBase()}/${portName}`);
+    ws.binaryType = 'arraybuffer';
+    session.ws = ws;
+
+    ws.onopen = () => {
+      session.status = 'connected';
+      setDot(portName, 'connected');
+      session.term.write('\r\n\x1b[32m[connected to /dev/' + portName + ']\x1b[0m\r\n');
+      if (state.selected === portName) updateToolbar();
+    };
+
+    ws.onmessage = (evt) => {
+      if (evt.data instanceof ArrayBuffer) {
+        session.term.write(new Uint8Array(evt.data));
+      } else {
+        session.term.write(evt.data);
+      }
+    };
+
+    ws.onclose = () => {
+      session.status = 'disconnected';
+      session.ws = null;
+      setDot(portName, '');
+      session.term.write('\r\n\x1b[33m[disconnected]\x1b[0m\r\n');
+      if (state.selected === portName) updateToolbar();
+    };
+
+    ws.onerror = () => {
+      session.status = 'error';
+      setDot(portName, 'error');
+      session.term.write('\r\n\x1b[31m[connection error]\x1b[0m\r\n');
+      if (state.selected === portName) updateToolbar();
+    };
+
+    // Forward keystrokes to serial port
+    session.term.onData(data => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      }
+    });
+  }
+
+  function disconnect(portName) {
+    const session = state.sessions[portName];
+    if (!session || !session.ws) return;
+    session.ws.close();
+  }
+
+  // ── Toolbar buttons ────────────────────────────────────────────────────────
+  btnConnect.onclick    = () => state.selected && connect(state.selected);
+  btnDisconnect.onclick = () => state.selected && disconnect(state.selected);
+  btnBreak.onclick = () => {
+    const s = state.selected && state.sessions[state.selected];
+    if (s && s.ws && s.ws.readyState === WebSocket.OPEN) {
+      s.ws.send(JSON.stringify({ type: 'break' }));
+    }
+  };
+  btnClear.onclick      = () => {
+    const s = state.sessions[state.selected];
+    if (s) s.term.clear();
+  };
+
+  baudSelect.onchange = async () => {
+    const port = state.selected;
+    if (!port) return;
+    const baud = parseInt(baudSelect.value, 10);
+    const prevBaud = state.config[port].baud;
+    if (baud === prevBaud) return;
+
+    // Update state before disconnecting so updateToolbar() (triggered by
+    // ws.onclose) reads the new value and doesn't revert the dropdown.
+    state.config[port].baud = baud;
+    baudSelect.disabled = true;
+
+    const s = state.sessions[port];
+    if (s) s.term.write(`\r\n\x1b[33m[changing baud rate to ${baud}…]\x1b[0m\r\n`);
+
+    disconnect(port);
+
+    try {
+      const res = await fetch(`/api/config/${port}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baud }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      if (s) s.term.write(`\x1b[32m[baud rate set to ${baud} — reconnecting…]\x1b[0m\r\n`);
+      connect(port);
+    } catch (err) {
+      // Revert on failure
+      state.config[port].baud = prevBaud;
+      baudSelect.value = prevBaud;
+      if (s) s.term.write(`\x1b[31m[error setting baud: ${err.message}]\x1b[0m\r\n`);
+    } finally {
+      baudSelect.disabled = false;
+    }
+  };
+
+  // ── Resize ────────────────────────────────────────────────────────────────
+  const ro = new ResizeObserver(() => {
+    if (state.selected) {
+      const s = state.sessions[state.selected];
+      if (s) s.fitAddon.fit();
+    }
+  });
+  ro.observe(termContainer);
+
+  // ── Port order (persisted across reloads) ────────────────────────────────
+  let _portOrder = [];
+  try { _portOrder = JSON.parse(localStorage.getItem('portOrder') || '[]'); } catch {}
+
+  function _applyPortOrder(ports) {
+    const ordered = _portOrder.filter(p => ports.includes(p));
+    const rest    = ports.filter(p => !ordered.includes(p));
+    return [...ordered, ...rest];
+  }
+
+  function _savePortOrder() {
+    _portOrder = Array.from(portListEl.querySelectorAll('.port-item')).map(el => el.dataset.port);
+    localStorage.setItem('portOrder', JSON.stringify(_portOrder));
+  }
+
+  // ── Drag-and-drop reordering ──────────────────────────────────────────────
+  let _dragSrc = null;
+
+  function _onDragStart(e) {
+    _dragSrc = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function _onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (this !== _dragSrc) this.classList.add('drag-over');
+  }
+  function _onDragLeave() { this.classList.remove('drag-over'); }
+  function _onDrop(e) {
+    e.stopPropagation();
+    if (_dragSrc && _dragSrc !== this) {
+      const items  = Array.from(portListEl.querySelectorAll('.port-item'));
+      const srcIdx = items.indexOf(_dragSrc);
+      const dstIdx = items.indexOf(this);
+      portListEl.insertBefore(_dragSrc, srcIdx < dstIdx ? this.nextSibling : this);
+      _savePortOrder();
+    }
+    this.classList.remove('drag-over');
+  }
+  function _onDragEnd() {
+    this.classList.remove('dragging');
+    portListEl.querySelectorAll('.port-item').forEach(el => el.classList.remove('drag-over'));
+    _dragSrc = null;
+  }
+
+  // ── Build a single sidebar port item ──────────────────────────────────────
+  function _buildPortItem(portName) {
+    const item = document.createElement('div');
+    item.className = 'port-item';
+    item.dataset.port = portName;
+    item.draggable = true;
+    if (state.selected === portName) item.classList.add('active');
+
+    const handle = document.createElement('span');
+    handle.className = 'port-item-handle';
+    handle.textContent = '⠿';
+    handle.title = 'Drag to reorder';
+
+    const dot = document.createElement('span');
+    dot.className = 'port-dot';
+    const s = state.sessions[portName];
+    if (s) {
+      if      (s.status === 'connected')  dot.classList.add('connected');
+      else if (s.status === 'connecting') dot.classList.add('connecting');
+      else if (s.status === 'error')      dot.classList.add('error');
+    }
+
+    const labelWrap = document.createElement('span');
+    labelWrap.className = 'port-label';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'port-label-name';
+    nameEl.textContent = state.labels[portName] || `/dev/${portName}`;
+
+    const devEl = document.createElement('div');
+    devEl.className = 'port-label-dev';
+    devEl.textContent = state.labels[portName] ? `/dev/${portName}` : '';
+
+    labelWrap.appendChild(nameEl);
+    labelWrap.appendChild(devEl);
+    item.appendChild(handle);
+    item.appendChild(dot);
+    item.appendChild(labelWrap);
+
+    item.onclick = () => selectPort(portName);
+
+    nameEl.ondblclick = (e) => {
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.className = 'port-label-input';
+      input.value = state.labels[portName] || '';
+      input.placeholder = `/dev/${portName}`;
+      labelWrap.replaceChild(input, nameEl);
+      input.focus();
+      input.select();
+      const commit = async () => {
+        const newLabel = input.value.trim();
+        labelWrap.replaceChild(nameEl, input);
+        try {
+          await fetch(`/api/labels/${portName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label: newLabel }),
+          });
+          state.labels[portName] = newLabel || undefined;
+          nameEl.textContent = newLabel || `/dev/${portName}`;
+          devEl.textContent  = newLabel ? `/dev/${portName}` : '';
+          if (state.selected === portName) updateToolbar();
+        } catch (err) { console.error('Label save failed', err); }
+      };
+      input.onblur    = commit;
+      input.onkeydown = (ev) => {
+        if (ev.key === 'Enter')  { input.blur(); }
+        if (ev.key === 'Escape') { labelWrap.replaceChild(nameEl, input); }
+      };
+    };
+
+    item.addEventListener('dragstart', _onDragStart);
+    item.addEventListener('dragover',  _onDragOver);
+    item.addEventListener('dragleave', _onDragLeave);
+    item.addEventListener('drop',      _onDrop);
+    item.addEventListener('dragend',   _onDragEnd);
+
+    return item;
+  }
+
+  // ── Refresh sidebar only (used after udev changes, settings stays open) ───
+  async function refreshPortList() {
+    try {
+      const [portsRes, labelsRes] = await Promise.all([
+        fetch('/ports'),
+        fetch('/api/labels'),
+      ]);
+      const newPorts  = await portsRes.json();
+      const newLabels = await labelsRes.json();
+      state.ports  = _applyPortOrder(newPorts);
+      state.labels = { ...state.labels, ...newLabels };
+    } catch { return; }
+    portListEl.innerHTML = '';
+    state.ports.forEach(portName => portListEl.appendChild(_buildPortItem(portName)));
+  }
+
+  // ── Load ports + config from server ───────────────────────────────────────
+  async function loadPorts() {
+    try {
+      const [portsRes, configRes, baudRes, labelsRes] = await Promise.all([
+        fetch('/ports'),
+        fetch('/api/config'),
+        fetch('/api/baud_rates'),
+        fetch('/api/labels'),
+      ]);
+      state.ports     = _applyPortOrder(await portsRes.json());
+      state.config    = await configRes.json();
+      state.baudRates = await baudRes.json();
+      state.labels    = await labelsRes.json();
+    } catch {
+      portListEl.innerHTML = '<p style="padding:12px 16px;color:#f44336;font-size:12px">Failed to load ports</p>';
+      return;
+    }
+
+    baudSelect.innerHTML = '';
+    state.baudRates.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b;
+      opt.textContent = b.toLocaleString();
+      baudSelect.appendChild(opt);
+    });
+
+    portListEl.innerHTML = '';
+    state.ports.forEach(portName => portListEl.appendChild(_buildPortItem(portName)));
+
+    if (state.ports.length > 0) selectPort(state.ports[0]);
+  }
+
+  loadPorts();
+
+  // ── USB device change notifications (auto-register / hot-plug) ───────────
+  (function startUdevEventSource() {
+    const es = new EventSource('/api/udev/events');
+    es.addEventListener('udev_change', () => {
+      refreshPortList();
+      if (settingsOpen) loadUdev();
+    });
+    es.onerror = () => { es.close(); setTimeout(startUdevEventSource, 5000); };
+  })();
+
+  // ── Version label ─────────────────────────────────────────────────────────
+  fetch('/api/version').then(r => r.ok ? r.json() : null).then(data => {
+    if (data && data.version) {
+      document.getElementById('version-label').textContent = 'v' + data.version;
+    }
+  }).catch(() => {});
+
+  loadSecurity();
+
+  // ── Settings panel ────────────────────────────────────────────────────────
+  const settingsPanel  = document.getElementById('settings-panel');
+  const settingsBtn    = document.getElementById('settings-btn');
+  const termContainerEl = document.getElementById('terminal-container');
+  const toolbarEl      = document.getElementById('toolbar');
+  let settingsOpen = false;
+
+  function toggleSettings() {
+    settingsOpen = !settingsOpen;
+    settingsBtn.classList.toggle('active', settingsOpen);
+
+    if (settingsOpen) {
+      termContainerEl.style.display = 'none';
+      toolbarEl.style.display       = 'none';
+      settingsPanel.style.display   = 'flex';
+      loadSystemInfo();
+      loadUsers();
+      logState.page = 1;
+      loadLogs();
+      loadSshSettings();
+      loadTls();
+      loadSessionTimeout();
+      loadUdev();
+    } else {
+      settingsPanel.style.display   = 'none';
+      toolbarEl.style.display       = 'flex';
+      termContainerEl.style.display = 'block';
+      // Re-fit the active terminal after the container reappears
+      if (state.selected) {
+        const s = state.sessions[state.selected];
+        if (s) requestAnimationFrame(() => requestAnimationFrame(() => s.fitAddon.fit()));
+      }
+    }
+  }
+
+  async function loadSystemInfo() {
+    const grid = document.getElementById('sysinfo-grid');
+    try {
+      const res  = await fetch('/api/system_info');
+      const data = await res.json();
+      const rows = [
+        ['Serial Server', data.serial_server],
+        ['Python',        data.python],
+        ['aiohttp',       data.aiohttp],
+        ['ser2net',       data.ser2net],
+        ['nginx',         data.nginx],
+        ['OS',            data.os],
+        ['xterm.js',        data.xterm],
+        ['xterm-addon-fit', data.xterm_addon_fit],
+      ];
+      grid.innerHTML = rows.map(([label, value]) => `
+        <span style="color:#556;white-space:nowrap">${label}</span>
+        <span style="color:#cdd3e0;font-family:monospace">${value || '—'}</span>
+      `).join('');
+    } catch {
+      grid.innerHTML = '<span style="color:#f44336;font-size:12px">Failed to load.</span>';
+    }
+  }
+
+  async function loadUsers() {
+    const listEl = document.getElementById('user-list');
+    listEl.innerHTML = '<span style="color:#556;font-size:12px">Loading…</span>';
+    try {
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      listEl.innerHTML = '';
+      if (users.length === 0) {
+        listEl.innerHTML = '<span style="color:#556;font-size:12px">No users yet.</span>';
+        return;
+      }
+      users.forEach(username => {
+        const row = document.createElement('div');
+        row.className = 'user-row';
+        row.dataset.username = username;
+        row.innerHTML = `<span>${username}</span>
+          <button class="btn-danger" onclick="removeUser('${username.replace(/'/g, "\\'")}')">Remove</button>`;
+        listEl.appendChild(row);
+      });
+    } catch {
+      listEl.innerHTML = '<span style="color:#f44336;font-size:12px">Failed to load users.</span>';
+    }
+  }
+
+  function setUserMsg(text, isErr) {
+    const el = document.getElementById('user-msg');
+    el.textContent = text;
+    el.className = 'settings-msg ' + (isErr ? 'err' : 'ok');
+  }
+
+  async function addUser() {
+    const username  = document.getElementById('new-username').value.trim();
+    const password  = document.getElementById('new-password').value;
+    const password2 = document.getElementById('new-password2').value;
+
+    if (!username)            return setUserMsg('Username is required.', true);
+    if (!password)            return setUserMsg('Password is required.', true);
+    if (password !== password2) return setUserMsg('Passwords do not match.', true);
+
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return setUserMsg(err, true);
+      }
+      document.getElementById('new-username').value  = '';
+      document.getElementById('new-password').value  = '';
+      document.getElementById('new-password2').value = '';
+      setUserMsg(`User '${username}' saved.`, false);
+      loadUsers();
+    } catch {
+      setUserMsg('Request failed.', true);
+    }
+  }
+
+  async function removeUser(username) {
+    if (!confirm(`Remove user '${username}'?`)) return;
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.text();
+        return setUserMsg(err, true);
+      }
+      setUserMsg(`User '${username}' removed.`, false);
+      loadUsers();
+    } catch {
+      setUserMsg('Request failed.', true);
+    }
+  }
+
+  // ── Login log ─────────────────────────────────────────────────────────────
+  const logState = { page: 1, limit: 10, total: 0 };
+
+  function logPageDelta(delta) {
+    logState.page = Math.max(1, logState.page + delta);
+    loadLogs();
+  }
+
+  async function loadLogs() {
+    const tbody   = document.getElementById('log-body');
+    const pgInfo  = document.getElementById('log-pg-info');
+    const btnPrev = document.getElementById('log-pg-prev');
+    const btnNext = document.getElementById('log-pg-next');
+    try {
+      const res  = await fetch(`/api/logs?page=${logState.page}&limit=${logState.limit}`);
+      const data = await res.json();
+      logState.total = data.total;
+      const totalPages = Math.max(1, Math.ceil(data.total / logState.limit));
+      // clamp in case we were on a page that no longer exists
+      if (logState.page > totalPages) { logState.page = totalPages; }
+
+      tbody.innerHTML = '';
+      if (data.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="log-empty">No logins recorded yet.</td></tr>';
+      } else {
+        data.rows.forEach(r => {
+          const tr = document.createElement('tr');
+          const badge = r.success
+            ? '<span style="color:#4caf50;font-weight:600">OK</span>'
+            : '<span style="color:#f44336;font-weight:600">FAILED</span>';
+          tr.innerHTML =
+            `<td class="log-user">${r.username}</td>` +
+            `<td class="log-ip">${r.ip || '—'}</td>` +
+            `<td class="log-time">${r.logged_in_at.replace('T', ' ')}</td>` +
+            `<td>${badge}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+
+      const start = data.total === 0 ? 0 : (logState.page - 1) * logState.limit + 1;
+      const end   = Math.min(logState.page * logState.limit, data.total);
+      pgInfo.textContent = data.total === 0 ? '' : `${start}–${end} of ${data.total}`;
+      btnPrev.disabled = logState.page <= 1;
+      btnNext.disabled = logState.page >= totalPages;
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="4" class="log-empty" style="color:#f44336">Failed to load log.</td></tr>';
+    }
+  }
+
+  // ── SSH settings ──────────────────────────────────────────────────────────
+  async function loadSshSettings() {
+    try {
+      const res  = await fetch('/api/ssh');
+      const data = await res.json();
+
+      document.getElementById('ssh-enabled').checked = data.enabled;
+      document.getElementById('ssh-port').value      = data.port;
+
+      // Populate serial port dropdown
+      const sel = document.getElementById('ssh-serial-port');
+      sel.innerHTML = '<option value="">— auto (first available) —</option>';
+      state.ports.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = `/dev/${p}`;
+        if (p === data.serial_port) opt.selected = true;
+        sel.appendChild(opt);
+      });
+
+      const info = document.getElementById('ssh-info');
+      if (data.enabled) {
+        document.getElementById('ssh-info-host').textContent = location.hostname;
+        document.getElementById('ssh-info-port').textContent = data.port;
+        document.getElementById('ssh-info-fp').textContent   = data.fingerprint || '(generating…)';
+        info.style.display = 'block';
+      } else {
+        info.style.display = 'none';
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  async function saveSshSettings() {
+    const enabled     = document.getElementById('ssh-enabled').checked;
+    const port        = parseInt(document.getElementById('ssh-port').value, 10);
+    const serial_port = document.getElementById('ssh-serial-port').value;
+    const msgEl       = document.getElementById('ssh-msg');
+
+    if (isNaN(port) || port < 1024 || port > 65535) {
+      msgEl.textContent = 'Port must be between 1024 and 65535.';
+      msgEl.className   = 'settings-msg err';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/ssh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, port, serial_port }),
+      });
+      if (!res.ok) { msgEl.textContent = await res.text(); msgEl.className = 'settings-msg err'; return; }
+      const data = await res.json();
+      msgEl.textContent = enabled ? `SSH server running on port ${port}.` : 'SSH server disabled.';
+      msgEl.className   = 'settings-msg ok';
+
+      const info = document.getElementById('ssh-info');
+      if (enabled) {
+        document.getElementById('ssh-info-host').textContent = location.hostname;
+        document.getElementById('ssh-info-port').textContent = port;
+        document.getElementById('ssh-info-fp').textContent   = data.fingerprint || '(generating…)';
+        info.style.display = 'block';
+      } else {
+        info.style.display = 'none';
+      }
+    } catch {
+      msgEl.textContent = 'Request failed.'; msgEl.className = 'settings-msg err';
+    }
+  }
+
+  // ── TLS ───────────────────────────────────────────────────────────────────
+  function setTlsMsg(text, isErr) {
+    const el = document.getElementById('tls-msg');
+    el.textContent = text;
+    el.className = 'settings-msg ' + (isErr ? 'err' : 'ok');
+  }
+
+  async function loadTls() {
+    try {
+      const res  = await fetch('/api/tls');
+      const data = await res.json();
+      const bar     = document.getElementById('tls-status-bar');
+      const text    = document.getElementById('tls-status-text');
+      const detail  = document.getElementById('tls-cert-detail');
+      const heading = document.getElementById('tls-upload-heading');
+      const removeBtn = document.getElementById('tls-remove-btn');
+
+      if (data.enabled && data.cert) {
+        bar.className = 'tls-status https';
+        text.textContent = 'HTTPS enabled';
+        const expiry = data.cert.not_after
+          ? new Date(data.cert.not_after).toLocaleDateString()
+          : 'unknown';
+        const notBefore = data.cert.not_before
+          ? new Date(data.cert.not_before).toLocaleDateString()
+          : 'unknown';
+        detail.style.display = 'block';
+        detail.innerHTML =
+          `<span>Subject:</span> ${data.cert.subject}<br>` +
+          `<span>Valid from:</span> ${notBefore}<br>` +
+          `<span>Expires:</span> ${expiry}`;
+        heading.textContent = 'Replace Certificate';
+        removeBtn.style.display = 'inline-block';
+      } else {
+        bar.className = 'tls-status http';
+        text.textContent = 'HTTP only — no certificate installed';
+        detail.style.display = 'none';
+        heading.textContent = 'Install Certificate';
+        removeBtn.style.display = 'none';
+      }
+    } catch {
+      document.getElementById('tls-status-text').textContent = 'Failed to load TLS status.';
+    }
+  }
+
+  // ── Session timeout ───────────────────────────────────────────────────────
+  let _timeoutSeconds  = 0;   // 0 = disabled
+  let _lastActivity    = Date.now();
+  let _graceUntil      = 0;   // ms timestamp — idle timer suppressed until this time
+  let _warningShown    = false;
+  let _countdownValue  = 60;
+  let _countdownHandle = null;
+
+  const WARN_BEFORE_SECS = 60;  // show warning this many seconds before expiry
+  const GRACE_MS         = 5 * 60 * 1000;  // 5 minutes grace after "Stay Logged In"
+
+  function _resetActivity() {
+    if (_warningShown) return;  // modal is showing — only the button can dismiss it
+    _lastActivity = Date.now();
+  }
+
+  function hideWarning() {
+    _warningShown = false;
+    document.getElementById('timeout-modal').classList.remove('show');
+    clearInterval(_countdownHandle);
+    _countdownHandle = null;
+  }
+
+  async function keepAlive() {
+    hideWarning();
+    _lastActivity = Date.now();
+    _graceUntil   = Date.now() + GRACE_MS;
+    await fetch('/api/ping').catch(() => {});
+  }
+
+  function showWarning(secsLeft) {
+    if (_warningShown) return;
+    _warningShown    = true;
+    _countdownValue  = secsLeft;
+    document.getElementById('timeout-countdown').textContent = secsLeft;
+    document.getElementById('timeout-modal').classList.add('show');
+    _countdownHandle = setInterval(() => {
+      _countdownValue--;
+      document.getElementById('timeout-countdown').textContent = Math.max(0, _countdownValue);
+      if (_countdownValue <= 0) {
+        clearInterval(_countdownHandle);
+        window.location.href = '/logout';
+      }
+    }, 1000);
+  }
+
+  function _startIdleWatcher() {
+    if (_timeoutSeconds <= 0) return;
+    ['mousemove','mousedown','keydown','touchstart','scroll'].forEach(ev =>
+      window.addEventListener(ev, _resetActivity, { passive: true })
+    );
+    setInterval(() => {
+      if (_timeoutSeconds <= 0) return;
+      if (Date.now() < _graceUntil) return;  // still in post-keepalive grace period
+      const idleSecs  = (Date.now() - _lastActivity) / 1000;
+      const remaining = _timeoutSeconds - idleSecs;
+      if (remaining <= 0) {
+        window.location.href = '/logout';
+      } else if (remaining <= WARN_BEFORE_SECS) {
+        showWarning(Math.ceil(remaining));
+      }
+    }, 1000);
+  }
+
+  async function loadSessionTimeout() {
+    try {
+      const res  = await fetch('/api/settings');
+      const data = await res.json();
+      _timeoutSeconds = (data.session_timeout_minutes || 0) * 60;
+      document.getElementById('timeout-minutes').value = data.session_timeout_minutes || 0;
+      if (_timeoutSeconds > 0) _startIdleWatcher();
+    } catch { /* non-fatal */ }
+  }
+
+  async function saveTimeout() {
+    const minutes = parseInt(document.getElementById('timeout-minutes').value, 10);
+    const msgEl   = document.getElementById('timeout-save-msg');
+    if (isNaN(minutes) || minutes < 0) {
+      msgEl.textContent = 'Enter a valid number of minutes (0 to disable).';
+      msgEl.className   = 'settings-msg err';
+      return;
+    }
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_timeout_minutes: minutes }),
+      });
+      if (!res.ok) { msgEl.textContent = await res.text(); msgEl.className = 'settings-msg err'; return; }
+      _timeoutSeconds = minutes * 60;
+      _lastActivity   = Date.now();
+      msgEl.textContent = minutes > 0
+        ? `Sessions will expire after ${minutes} minute${minutes === 1 ? '' : 's'} of inactivity.`
+        : 'Auto-logout disabled.';
+      msgEl.className = 'settings-msg ok';
+    } catch {
+      msgEl.textContent = 'Request failed.'; msgEl.className = 'settings-msg err';
+    }
+  }
+
+  loadSessionTimeout();
+
+  // ── USB Device Mapping ────────────────────────────────────────────────────
+  document.querySelectorAll('input[name="udev-id-method"]').forEach(radio => {
+    radio.addEventListener('change', async function () {
+      const msgEl = document.getElementById('udev-msg');
+      try {
+        const res = await fetch('/api/udev/id_method', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ method: this.value }),
+        });
+        if (!res.ok) {
+          msgEl.textContent = await res.text();
+          msgEl.className   = 'settings-msg err';
+          return;
+        }
+        msgEl.textContent = this.value === 'usb_path'
+          ? 'Identification method set to USB Port Path.'
+          : 'Identification method set to Serial Number.';
+        msgEl.className = 'settings-msg ok';
+        loadUdev();
+      } catch {
+        msgEl.textContent = 'Request failed.';
+        msgEl.className   = 'settings-msg err';
+      }
+    });
+  });
+
+  async function loadUdev() {
+    const wrap  = document.getElementById('udev-table-wrap');
+    const msgEl = document.getElementById('udev-msg');
+    wrap.innerHTML = '<span style="color:#556;font-size:12px">Loading…</span>';
+    try {
+      const res  = await fetch('/api/udev');
+      const data = await res.json();
+
+      document.getElementById('udev-auto-register').checked = data.auto_register;
+
+      const idMethod = data.id_method || 'usb_path';
+      document.querySelectorAll('input[name="udev-id-method"]').forEach(r => {
+        r.checked = r.value === idMethod;
+      });
+
+      const hasRules        = data.rules.length > 0;
+      const hasUnregistered = data.unregistered.length > 0;
+
+      if (!hasRules && !hasUnregistered) {
+        wrap.innerHTML = '<div class="udev-empty">No USB serial devices detected and no rules configured.</div>';
+        return;
+      }
+
+      let html = `
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Assigned Port</th>
+              <th>Identifier</th>
+              <th>Device</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      for (const r of data.rules) {
+        const deviceLabel = [r.vendor, r.model].filter(Boolean).join(' ') || '—';
+        const statusHtml  = r.connected
+          ? '<span class="badge-connected">Connected</span>'
+          : '<span class="badge-disconnected">Disconnected</span>';
+        let identCell, actionCell;
+        if (r.usb_path_managed) {
+          // Rule matches by USB port path — preferred
+          identCell = `<span style="font-family:monospace;font-size:11px">USB&nbsp;${r.usb_path}</span>
+            <br><span style="font-size:10px;color:#667;font-style:italic">port path</span>`;
+          actionCell = `<button class="btn-danger" onclick="removeUdevRule('${r.port_name}')">Remove</button>`;
+        } else if (r.serial_managed) {
+          // Legacy rule matches by serial number
+          identCell = `<span style="font-family:monospace;font-size:11px">${r.serial}</span>
+            <br><span style="font-size:10px;color:#667;font-style:italic">serial number</span>`;
+          // If the live device also has a usb_path, offer to upgrade
+          const liveUsb = r.live_usb_path;
+          if (liveUsb) {
+            actionCell = `<div style="display:flex;gap:6px;align-items:center">
+              <button class="btn btn-connect"
+                style="padding:3px 10px;font-size:11px"
+                onclick="upgradeUdevRule('${r.port_name}','','${liveUsb}')"
+                title="Switch rule to match by USB port instead of serial number">Use Port</button>
+              <button class="btn-danger" onclick="removeUdevRule('${r.port_name}')">Remove</button>
+            </div>`;
+          } else {
+            actionCell = `<button class="btn-danger" onclick="removeUdevRule('${r.port_name}')">Remove</button>`;
+          }
+        } else {
+          identCell  = `<span style="color:#445;font-style:italic;font-size:11px">custom rule</span>`;
+          actionCell = `<button class="btn-danger" onclick="removeUdevRule('${r.port_name}')">Remove</button>`;
+        }
+
+        html += `
+          <tr>
+            <td style="font-family:monospace;color:#7b8cde">/dev/${r.port_name}</td>
+            <td>${identCell}</td>
+            <td>${deviceLabel}</td>
+            <td>${statusHtml}</td>
+            <td>${actionCell}</td>
+          </tr>`;
+      }
+
+      for (const d of data.unregistered) {
+        const deviceLabel = [d.vendor, d.model].filter(Boolean).join(' ') || '—';
+        let identCell, assignCell;
+
+        // Pick identifier based on configured method, fall back to whatever's available
+        const preferSerial  = idMethod === 'serial';
+        const useSerial     = preferSerial ? (d.serial || d.usb_path ? (d.serial ? true : false) : false)
+                                           : false;
+        const assignSerial  = (preferSerial && d.serial) ? d.serial
+                            : (!preferSerial && !d.usb_path && d.serial) ? d.serial : '';
+        const assignUsbPath = (preferSerial && !d.serial && d.usb_path) ? d.usb_path
+                            : (!preferSerial && d.usb_path) ? d.usb_path : '';
+
+        if (assignUsbPath) {
+          identCell  = `<span style="font-family:monospace;font-size:11px">USB&nbsp;${assignUsbPath}</span>
+            <br><span style="font-size:10px;color:#667;font-style:italic">port path${d.serial ? ' · S/N: ' + d.serial : ''}</span>`;
+          assignCell = `<button class="btn btn-connect"
+               style="padding:3px 10px;font-size:11px"
+               onclick="assignUdevPort('','${assignUsbPath}')">Assign Port</button>`;
+        } else if (assignSerial) {
+          identCell  = `<span style="font-family:monospace;font-size:11px">${assignSerial}</span>
+            <br><span style="font-size:10px;color:#667;font-style:italic">serial number</span>`;
+          assignCell = `<button class="btn btn-connect"
+               style="padding:3px 10px;font-size:11px"
+               onclick="assignUdevPort('${assignSerial}','')">Assign Port</button>`;
+        } else {
+          identCell  = '<span class="badge-noserial">No identifier</span>';
+          assignCell = '<span style="color:#445;font-size:11px">Cannot map</span>';
+        }
+        html += `
+          <tr>
+            <td style="color:#445;font-style:italic">unregistered</td>
+            <td>${identCell}</td>
+            <td>${deviceLabel}
+              <br><span style="color:#445;font-size:10px">/dev/${d.sys_name}</span></td>
+            <td><span class="badge-unregistered">Connected</span></td>
+            <td>${assignCell}</td>
+          </tr>`;
+      }
+
+      html += '</tbody></table>';
+      wrap.innerHTML = html;
+    } catch {
+      wrap.innerHTML = '<span style="color:#f44336;font-size:12px">Failed to load device mapping.</span>';
+    }
+  }
+
+  document.getElementById('udev-auto-register').addEventListener('change', async function () {
+    const enabled = this.checked;
+    const msgEl   = document.getElementById('udev-msg');
+    try {
+      const res = await fetch('/api/udev/auto_register', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        msgEl.textContent = await res.text();
+        msgEl.className   = 'settings-msg err';
+        return;
+      }
+      msgEl.textContent = enabled ? 'Auto-register enabled.' : 'Auto-register disabled.';
+      msgEl.className   = 'settings-msg ok';
+    } catch {
+      msgEl.textContent = 'Request failed.';
+      msgEl.className   = 'settings-msg err';
+    }
+  });
+
+  async function removeUdevRule(portName) {
+    if (!confirm(`Remove the fixed mapping for /dev/${portName}?\n\nThe device will no longer get a stable symlink.`)) return;
+    const msgEl = document.getElementById('udev-msg');
+    try {
+      const res = await fetch(`/api/udev/${encodeURIComponent(portName)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        msgEl.textContent = await res.text();
+        msgEl.className   = 'settings-msg err';
+        return;
+      }
+      msgEl.textContent = `Rule for /dev/${portName} removed.`;
+      msgEl.className   = 'settings-msg ok';
+      loadUdev();
+      refreshPortList();
+    } catch {
+      msgEl.textContent = 'Request failed.';
+      msgEl.className   = 'settings-msg err';
+    }
+  }
+
+  async function upgradeUdevRule(portName, serial, usbPath) {
+    const byWhat = usbPath ? `USB port path (${usbPath})` : `serial number (${serial})`;
+    if (!confirm(
+      `Rewrite the rule for /dev/${portName} to match by ${byWhat}?\n\n` +
+      `The device will keep the same port name.`
+    )) return;
+    const msgEl = document.getElementById('udev-msg');
+    try {
+      const body = { port_name: portName };
+      if (usbPath) body.usb_path = usbPath; else body.serial = serial;
+      const res = await fetch('/api/udev', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) {
+        msgEl.textContent = await res.text();
+        msgEl.className   = 'settings-msg err';
+        return;
+      }
+      msgEl.textContent = `/dev/${portName} rule updated.`;
+      msgEl.className   = 'settings-msg ok';
+      loadUdev();
+      refreshPortList();
+    } catch {
+      msgEl.textContent = 'Request failed.';
+      msgEl.className   = 'settings-msg err';
+    }
+  }
+
+  async function assignUdevPort(serial, usbPath) {
+    const msgEl = document.getElementById('udev-msg');
+    try {
+      const body = {};
+      if (usbPath) body.usb_path = usbPath; else body.serial = serial;
+      const res = await fetch('/api/udev', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) {
+        msgEl.textContent = await res.text();
+        msgEl.className   = 'settings-msg err';
+        return;
+      }
+      const data = await res.json();
+      const id   = usbPath ? `USB ${usbPath}` : serial;
+      msgEl.textContent = `${id} assigned to /dev/${data.port_name}.`;
+      msgEl.className   = 'settings-msg ok';
+      loadUdev();
+      refreshPortList();
+    } catch {
+      msgEl.textContent = 'Request failed.';
+      msgEl.className   = 'settings-msg err';
+    }
+  }
+
+  let tlsTab = 'pem';
+
+  function switchTlsTab(tab) {
+    tlsTab = tab;
+    document.getElementById('tls-pem-form').style.display = tab === 'pem' ? 'block' : 'none';
+    document.getElementById('tls-p12-form').style.display = tab === 'p12' ? 'block' : 'none';
+    document.getElementById('tab-pem').classList.toggle('active', tab === 'pem');
+    document.getElementById('tab-p12').classList.toggle('active', tab === 'p12');
+    setTlsMsg('', false);
+  }
+
+  async function uploadTls() {
+    const form = new FormData();
+
+    if (tlsTab === 'pem') {
+      const certFile = document.getElementById('tls-cert-file').files[0];
+      const keyFile  = document.getElementById('tls-key-file').files[0];
+      if (!certFile || !keyFile) return setTlsMsg('Select both a certificate and a key file.', true);
+      form.append('cert', certFile);
+      form.append('key',  keyFile);
+    } else {
+      const p12File     = document.getElementById('tls-p12-file').files[0];
+      const p12Password = document.getElementById('tls-p12-password').value;
+      if (!p12File) return setTlsMsg('Select a PKCS#12 file.', true);
+      form.append('p12',          p12File);
+      form.append('p12_password', p12Password);
+    }
+
+    setTlsMsg('Uploading and applying…', false);
+    try {
+      const res = await fetch('/api/tls', { method: 'POST', body: form });
+      if (!res.ok) return setTlsMsg(await res.text(), true);
+      setTlsMsg('Certificate applied. NGINX reloaded.', false);
+      // Clear inputs
+      ['tls-cert-file','tls-key-file','tls-p12-file'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('tls-p12-password').value = '';
+      await loadTls();
+    } catch {
+      setTlsMsg('Request failed.', true);
+    }
+  }
+
+  async function removeTls() {
+    if (!confirm('Remove TLS and revert to HTTP?')) return;
+    setTlsMsg('Removing…', false);
+    try {
+      const res = await fetch('/api/tls', { method: 'DELETE' });
+      if (!res.ok) {
+        return setTlsMsg(await res.text(), true);
+      }
+      setTlsMsg('TLS removed. NGINX reloaded.', false);
+      await loadTls();
+    } catch {
+      setTlsMsg('Request failed.', true);
+    }
+  }
+
+  // -- Access Control (mTLS / IP whitelist) -----------------------------------
+
+  function setSecMsg(msg, err) {
+    const el = document.getElementById('sec-settings-msg');
+    el.textContent = msg;
+    el.style.color = err ? '#f44336' : '#4caf50';
+  }
+  function setSecCertMsg(msg, err) {
+    const el = document.getElementById('sec-cert-msg');
+    el.textContent = msg;
+    el.style.color = err ? '#f44336' : '#4caf50';
+  }
+
+  function secMtlsToggle() {
+    const on = document.getElementById('sec-mtls-enabled').checked;
+    document.getElementById('sec-mtls-warning').style.display = on ? 'block' : 'none';
+  }
+  function secIpToggle() {
+    document.getElementById('sec-ip-list').disabled =
+      !document.getElementById('sec-ip-enabled').checked;
+  }
+
+  function _parseLines(id) {
+    return document.getElementById(id).value
+      .split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
+  function _renderCertTable(certs) {
+    const wrap = document.getElementById('sec-cert-table-wrap');
+    if (!certs.length) {
+      wrap.innerHTML = '<span style="font-size:12px;color:#556">No certificates issued yet.</span>';
+      return;
+    }
+    const rows = certs.map(c => {
+      const fp   = c.fingerprint ? c.fingerprint.slice(0,16) + '…' : '';
+      const date = c.issued_at ? c.issued_at.slice(0,10) : '';
+      const tag  = c.revoked
+        ? '<span style="color:#f44336;font-size:11px">Revoked</span>'
+        : `<button class="btn-danger-sm" style="padding:2px 8px;font-size:11px"
+             onclick="revokeCert('${c.id}','${c.name.replace(/'/g,"\\'")}')">Revoke</button>`;
+      return `<tr>
+        <td style="padding:4px 8px;font-size:12px">${c.name}</td>
+        <td style="padding:4px 8px;font-size:11px;font-family:monospace;color:#7b8cde">${fp}</td>
+        <td style="padding:4px 8px;font-size:11px">${date}</td>
+        <td style="padding:4px 8px">${tag}</td>
+      </tr>`;
+    }).join('');
+    wrap.innerHTML = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="font-size:11px;color:#7b8cde;text-align:left">
+        <th style="padding:4px 8px">Name</th>
+        <th style="padding:4px 8px">Fingerprint</th>
+        <th style="padding:4px 8px">Issued</th>
+        <th style="padding:4px 8px"></th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  async function loadSecurity() {
+    try {
+      const res  = await fetch('/api/security');
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('sec-mtls-enabled').checked   = data.mtls_enabled;
+      document.getElementById('sec-ip-enabled').checked     = data.ip_whitelist_enabled;
+      document.getElementById('sec-ip-list').value          = (data.ip_whitelist || []).join('\n');
+      document.getElementById('sec-break-glass').value      = (data.break_glass_ips || []).join('\n');
+      document.getElementById('sec-mtls-warning').style.display = data.mtls_enabled ? 'block' : 'none';
+      if (data.system_id) {
+        document.getElementById('sec-system-id').textContent = data.system_id;
+        document.getElementById('sec-ca-name').textContent   = `Serial Server CA [${data.system_id}]`;
+      }
+      _renderCertTable(data.certs || []);
+    } catch {}
+  }
+
+  async function saveSecuritySettings() {
+    setSecMsg('Saving…', false);
+    try {
+      const body = {
+        mtls_enabled:         document.getElementById('sec-mtls-enabled').checked,
+        ip_whitelist_enabled: document.getElementById('sec-ip-enabled').checked,
+        ip_whitelist:         _parseLines('sec-ip-list'),
+        break_glass_ips:      _parseLines('sec-break-glass'),
+      };
+      const res = await fetch('/api/security', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return setSecMsg(await res.text(), true);
+      setSecMsg('Saved. nginx reloaded.', false);
+    } catch { setSecMsg('Request failed.', true); }
+  }
+
+  async function downloadCa() {
+    window.location.href = '/api/security/ca';
+  }
+
+  async function generateCert() {
+    const name = document.getElementById('sec-cert-name').value.trim();
+    if (!name) return setSecCertMsg('Enter a certificate name.', true);
+    setSecCertMsg('Generating…', false);
+    try {
+      const res = await fetch('/api/security/certs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) return setSecCertMsg(await res.text(), true);
+      const data = await res.json();
+
+      // Decode base64 → Blob and trigger download
+      const binary = atob(data.p12_b64);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/x-pkcs12' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = data.filename; a.click();
+      URL.revokeObjectURL(url);
+
+      document.getElementById('sec-cert-name').value = '';
+      setSecCertMsg(
+        `Certificate downloaded. Import password: <strong>${data.password}</strong>` +
+        `<br><small>Use this password when importing the .p12 into your browser or OS keychain.</small>`,
+        false
+      );
+      await loadSecurity();
+    } catch { setSecCertMsg('Request failed.', true); }
+  }
+
+  async function revokeCert(id, name) {
+    if (!confirm(`Revoke certificate for "${name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/security/certs/${id}`, { method: 'DELETE' });
+      if (!res.ok) return setSecCertMsg(await res.text(), true);
+      setSecCertMsg(`Certificate for "${name}" revoked.`, false);
+      await loadSecurity();
+    } catch { setSecCertMsg('Request failed.', true); }
+  }
+</script>
+</body>
+</html>

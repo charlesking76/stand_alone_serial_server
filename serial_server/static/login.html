@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Serial Server — Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    .card {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 40px 36px;
+      width: 340px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #7b8cde;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .card-subtitle {
+      font-size: 12px;
+      color: #445;
+      margin-bottom: 32px;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7b8cde;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      background: #0d1117;
+      color: #e0e0e0;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      padding: 9px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus { border-color: #4a90e2; }
+
+    .btn-login {
+      width: 100%;
+      margin-top: 8px;
+      padding: 10px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-login:hover { background: #5a9ff0; }
+
+    .error-msg {
+      display: none;
+      background: #3a1a1a;
+      border: 1px solid #7a2020;
+      border-radius: 4px;
+      color: #f44336;
+      font-size: 12px;
+      padding: 8px 12px;
+      margin-bottom: 18px;
+    }
+    .error-msg.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-title">Serial Server</div>
+    <div class="card-subtitle">Sign in to continue</div>
+
+    <div class="error-msg" id="error-msg">Invalid username or password.</div>
+    <div class="error-msg" id="timeout-msg" style="background:#1a1a10;border-color:#4a4010;color:#a08020">
+      Your session expired due to inactivity.
+    </div>
+
+    <form method="POST" action="/login">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn-login">Sign In</button>
+    </form>
+  </div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    if (p.get('error'))   document.getElementById('error-msg').classList.add('visible');
+    if (p.get('timeout')) document.getElementById('timeout-msg').classList.add('visible');
+  </script>
+</body>
+</html>

@@ -2065,7 +2065,7 @@
   }
   function setSecCertMsg(msg, err) {
     const el = document.getElementById('sec-cert-msg');
-    el.textContent = msg;
+    el.innerHTML = msg;
     el.style.color = err ? '#f44336' : '#4caf50';
   }
 

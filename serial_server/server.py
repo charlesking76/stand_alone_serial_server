@@ -1173,6 +1173,7 @@ async def _handle_ssh_client(process) -> None:
                             writer.write(_IAC_BREAK)
                             await writer.drain()
                             process.stdout.write(b"\r\n[BREAK sent]\r\n")
+                            await process.stdout.drain()
                             at_line_start = True
                             continue
                         elif b == b"~":

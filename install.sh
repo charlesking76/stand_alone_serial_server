@@ -54,9 +54,10 @@ if ! id "$SERVICE_USER" &>/dev/null; then
             --groups dialout "$SERVICE_USER"
 else
     info "User '$SERVICE_USER' already exists."
-    # Ensure dialout group membership (needed for serial ports)
-    usermod -aG dialout "$SERVICE_USER" 2>/dev/null || true
 fi
+# Ensure serial port group membership — Raspberry Pi OS uses plugdev, others use dialout
+usermod -aG dialout "$SERVICE_USER" 2>/dev/null || true
+getent group plugdev &>/dev/null && usermod -aG plugdev "$SERVICE_USER" 2>/dev/null || true
 
 # -- Emergency disable script ---------------------------------------------------
 EMERGENCY_SCRIPT="/usr/local/sbin/serial-server-emergency-disable"
@@ -243,8 +244,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=serial-server
 
-# Give the process access to serial devices
-SupplementaryGroups=dialout
+# Give the process access to serial devices (dialout=standard Linux, plugdev=Raspberry Pi OS)
+SupplementaryGroups=dialout plugdev
 
 # Hardening (loosen where needed)
 ProtectSystem=full

@@ -772,7 +772,7 @@ def _regenerate_crl() -> None:
         _x509.CertificateRevocationListBuilder()
         .issuer_name(ca_cert.subject)
         .last_update(now)
-        .next_update(now + datetime.timedelta(days=1))
+        .next_update(now + datetime.timedelta(days=30))
     )
 
     with sqlite3.connect(DB_PATH) as con:
@@ -792,6 +792,21 @@ def _regenerate_crl() -> None:
     crl = builder.sign(ca_key, hashes.SHA256())
     crl_path = CA_DIR / "ca.crl"
     crl_path.write_bytes(crl.public_bytes(serialization.Encoding.PEM))
+
+
+_CRL_RENEWAL_INTERVAL = 12 * 3600  # seconds
+
+
+async def _crl_renewal_task() -> None:
+    """Regenerate the CRL every 12 hours so it never expires between cert operations."""
+    while True:
+        await asyncio.sleep(_CRL_RENEWAL_INTERVAL)
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, _regenerate_crl)
+            await _apply_nginx_config(https=True)
+            log.info("CRL renewed successfully")
+        except Exception:
+            log.exception("CRL renewal failed")
 
 
 async def _generate_client_cert(name: str) -> tuple[str, bytes, str]:
@@ -1314,6 +1329,7 @@ UDEV_RULES_FILE = pathlib.Path("/etc/udev/rules.d/99-usb-serial.rules")
 _udev_auto_register: bool = False
 _udev_id_method: str = 'usb_path'
 _udev_monitor_task_handle: asyncio.Task | None = None
+_crl_renewal_task_handle:  asyncio.Task | None = None
 _udev_sse_queues: set[asyncio.Queue] = set()
 
 
@@ -2313,7 +2329,7 @@ async def _load_baud_rates() -> None:
 
 
 async def on_startup(app: web.Application) -> None:
-    global _udev_monitor_task_handle
+    global _udev_monitor_task_handle, _crl_renewal_task_handle
     await init_db()
     await _load_settings()
     await _load_ssh_settings()
@@ -2325,6 +2341,7 @@ async def on_startup(app: web.Application) -> None:
     for port_name in PORT_CONFIG:
         await _restart_port(port_name)
     _udev_monitor_task_handle = asyncio.ensure_future(_udev_monitor_task())
+    _crl_renewal_task_handle = asyncio.ensure_future(_crl_renewal_task())
     # Regenerate nginx config on every startup so it always reflects DB settings
     https_active = (TLS_DIR / "server.crt").exists() and (TLS_DIR / "server.key").exists()
     if https_active:
@@ -2334,7 +2351,7 @@ async def on_startup(app: web.Application) -> None:
 
 
 async def on_cleanup(app: web.Application) -> None:
-    global _udev_monitor_task_handle
+    global _udev_monitor_task_handle, _crl_renewal_task_handle
     if _udev_monitor_task_handle is not None:
         _udev_monitor_task_handle.cancel()
         try:
@@ -2342,6 +2359,13 @@ async def on_cleanup(app: web.Application) -> None:
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
         _udev_monitor_task_handle = None
+    if _crl_renewal_task_handle is not None:
+        _crl_renewal_task_handle.cancel()
+        try:
+            await asyncio.wait_for(_crl_renewal_task_handle, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        _crl_renewal_task_handle = None
     await _stop_ssh_server()
     for port_name, proc in _ser2net_procs.items():
         if proc.returncode is None:

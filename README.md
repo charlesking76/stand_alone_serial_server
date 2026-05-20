@@ -78,3 +78,7 @@ journalctl -u serial-server -f
 | 8080 | Python backend (localhost only) |
 | 7000+ | ser2net telnet bridges (one per serial port) |
 | 2222 | SSH serial bridge (optional, enable in Settings) |
+
+## Screen
+<img width="1279" height="673" alt="image" src="https://github.com/user-attachments/assets/584a9642-e1ad-4ff1-848c-204c3a7100ad" />
+

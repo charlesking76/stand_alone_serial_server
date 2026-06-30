@@ -1150,9 +1150,8 @@
   });
   ro.observe(termContainer);
 
-  // ── Port order (persisted across reloads) ────────────────────────────────
+  // ── Port order (persisted per-user on server) ────────────────────────────
   let _portOrder = [];
-  try { _portOrder = JSON.parse(localStorage.getItem('portOrder') || '[]'); } catch {}
 
   function _applyPortOrder(ports) {
     const ordered = _portOrder.filter(p => ports.includes(p));
@@ -1162,7 +1161,11 @@
 
   function _savePortOrder() {
     _portOrder = Array.from(portListEl.querySelectorAll('.port-item')).map(el => el.dataset.port);
-    localStorage.setItem('portOrder', JSON.stringify(_portOrder));
+    fetch('/api/prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port_order: _portOrder }),
+    });
   }
 
   // ── Drag-and-drop reordering ──────────────────────────────────────────────
@@ -1296,12 +1299,15 @@
   // ── Load ports + config from server ───────────────────────────────────────
   async function loadPorts() {
     try {
-      const [portsRes, configRes, baudRes, labelsRes] = await Promise.all([
+      const [portsRes, configRes, baudRes, labelsRes, prefsRes] = await Promise.all([
         fetch('/ports'),
         fetch('/api/config'),
         fetch('/api/baud_rates'),
         fetch('/api/labels'),
+        fetch('/api/prefs'),
       ]);
+      const prefs     = prefsRes.ok ? await prefsRes.json() : {};
+      _portOrder      = Array.isArray(prefs.port_order) ? prefs.port_order : [];
       state.ports     = _applyPortOrder(await portsRes.json());
       state.config    = await configRes.json();
       state.baudRates = await baudRes.json();

@@ -17,6 +17,8 @@ Endpoints:
   GET  /api/users               -> list users (requires auth)
   POST /api/users               -> add/update user  body: {"username": "...", "password": "..."}
   DELETE /api/users/{username}  -> remove user (requires auth)
+  GET  /api/prefs               -> current user's saved preferences
+  POST /api/prefs               -> save current user's preferences  body: {"port_order": [...]}
   GET  /ws/{port}               -> WebSocket terminal (requires auth)
 """
 
@@ -164,6 +166,14 @@ async def init_db() -> None:
                 fingerprint TEXT NOT NULL,
                 issued_at   TEXT NOT NULL,
                 revoked     INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_prefs (
+                username TEXT NOT NULL,
+                key      TEXT NOT NULL,
+                value    TEXT NOT NULL,
+                PRIMARY KEY (username, key)
             )
         """)
         await db.commit()
@@ -360,6 +370,37 @@ async def logout_handler(request: web.Request) -> web.Response:
 async def me_handler(request: web.Request) -> web.Response:
     session = await get_session(request)
     return web.json_response({"username": session.get("username")})
+
+
+async def get_prefs_handler(request: web.Request) -> web.Response:
+    session = await get_session(request)
+    username = session.get("username")
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT key, value FROM user_prefs WHERE username = ?", (username,)
+        ) as cur:
+            rows = await cur.fetchall()
+    prefs: dict = {}
+    for key, value in rows:
+        try:
+            prefs[key] = json.loads(value)
+        except Exception:
+            prefs[key] = value
+    return web.json_response(prefs)
+
+
+async def post_prefs_handler(request: web.Request) -> web.Response:
+    session = await get_session(request)
+    username = session.get("username")
+    body = await request.json()
+    async with aiosqlite.connect(DB_PATH) as db:
+        for key, value in body.items():
+            await db.execute(
+                "INSERT OR REPLACE INTO user_prefs (username, key, value) VALUES (?, ?, ?)",
+                (username, key, json.dumps(value)),
+            )
+        await db.commit()
+    return web.json_response({"ok": True})
 
 
 async def users_list_handler(request: web.Request) -> web.Response:
@@ -2396,6 +2437,8 @@ def build_app() -> web.Application:
 
     # User management
     app.router.add_get("/api/me",                       me_handler)
+    app.router.add_get("/api/prefs",                    get_prefs_handler)
+    app.router.add_post("/api/prefs",                   post_prefs_handler)
     app.router.add_get("/api/users",                    users_list_handler)
     app.router.add_post("/api/users",                   users_add_handler)
     app.router.add_delete("/api/users/{username}",      users_delete_handler)
